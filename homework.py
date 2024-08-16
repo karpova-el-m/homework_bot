@@ -36,10 +36,9 @@ HOMEWORK_VERDICTS = {
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     env_tokens = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
-    for env in env_tokens:
-        if env is None:
-            # raise EnvError
-            break
+    if None in env_tokens:
+        logging.critical('Ошибка запуска бота без переменных окружения')
+        raise EnvError
 
 
 def send_message(bot, message):
@@ -53,8 +52,9 @@ def send_message(bot, message):
             chat_id=TELEGRAM_CHAT_ID,
             text=message
         )
-    except Exception:
-        raise SendMessageError
+        logging.debug('Сообщение отправлено')
+    except Exception as error:
+        logging.error(f'Ошибка при отправке сообщения: {error}')
 
 
 def get_api_answer(timestamp):
@@ -84,6 +84,8 @@ def check_response(response):
         and type(response['homeworks']) is list
     ):
         raise TypeError
+    elif len(response['homeworks']) == 0:
+        logging.debug('Список домашних работ за указанный период пуст')
 
 
 def parse_status(homework):
@@ -93,9 +95,7 @@ def parse_status(homework):
     домашних работ.
     """
     if 'homework_name' not in homework:
-        raise HomeworkNameError(
-            f'Домашняя работа с именем {homework_name} не найдена'
-        )
+        raise HomeworkNameError('Домашняя работа не найдена')
     homework_name = homework['homework_name']
     status = homework['status']
     if status not in HOMEWORK_VERDICTS:
@@ -106,14 +106,14 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
+    check_tokens()
     bot = TeleBot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
+    timestamp = 0
     while True:
         try:
-            check_tokens()
             response = get_api_answer(timestamp)
             check_response(response)
-            homework = response['homeworks'][-1]
+            homework = response['homeworks'][0]
             message = parse_status(homework)
             send_message(bot, message)
         except Exception as error:
