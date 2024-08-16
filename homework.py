@@ -1,9 +1,22 @@
+import logging
 import os
-
-from dotenv import load_dotenv
 import time
+
 import requests
+from dotenv import load_dotenv
 from telebot import TeleBot, types
+
+from exceptions import (
+    EnvError, HomeworkNameError, HomeworkStatusError, HTTPError, RequestExceptionError, SendMessageError
+)
+
+logger = logging.getLogger("homework_logger")
+logging.basicConfig(
+    level=logging.DEBUG,
+    filename='homework.log',
+    format='%(asctime)s, %(levelname)s, %(message)s, %(name)s'
+)
+handler = logging.StreamHandler(stream=None)
 
 load_dotenv()
 
@@ -25,7 +38,8 @@ def check_tokens():
     env_tokens = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
     for env in env_tokens:
         if env is None:
-            return False
+            # raise EnvError
+            break
 
 
 def send_message(bot, message):
@@ -34,24 +48,25 @@ def send_message(bot, message):
     Принимает на вход два параметра: экземпляр класса TeleBot и строку
     с текстом сообщения.
     """
-    chat = message.chat
-    name = message.chat.first_name
-    bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text='')
-
-
-class HTTPError(Exception):
-    pass
+    try:
+        bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message
+        )
+    except Exception:
+        raise SendMessageError
 
 
 def get_api_answer(timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
-    response = requests.get(
-        ENDPOINT,
-        headers=HEADERS,
-        params={'from_date': timestamp}
-    )
+    try:
+        response = requests.get(
+            ENDPOINT,
+            headers=HEADERS,
+            params={'from_date': timestamp}
+        )
+    except requests.RequestException:
+        raise RequestExceptionError
     if response.status_code != 200:
         raise HTTPError
     return response.json()
@@ -68,7 +83,7 @@ def check_response(response):
         and 'homeworks' in response
         and type(response['homeworks']) is list
     ):
-        return False
+        raise TypeError
 
 
 def parse_status(homework):
@@ -77,6 +92,15 @@ def parse_status(homework):
     В качестве параметра функция получает только один элемент из списка
     домашних работ.
     """
+    if 'homework_name' not in homework:
+        raise HomeworkNameError(
+            f'Домашняя работа с именем {homework_name} не найдена'
+        )
+    homework_name = homework['homework_name']
+    status = homework['status']
+    if status not in HOMEWORK_VERDICTS:
+        raise HomeworkStatusError
+    verdict = HOMEWORK_VERDICTS[status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -86,12 +110,16 @@ def main():
     timestamp = int(time.time())
     while True:
         try:
+            check_tokens()
             response = get_api_answer(timestamp)
+            check_response(response)
+            homework = response['homeworks'][-1]
+            message = parse_status(homework)
+            send_message(bot, message)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-        # else:
-        #     pass
         time.sleep(RETRY_PERIOD)
+
 
 if __name__ == '__main__':
     main()
