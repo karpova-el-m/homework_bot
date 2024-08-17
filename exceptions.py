@@ -16,7 +16,3 @@ class HomeworkStatusError(Exception):
 
 class HomeworkNameError(Exception):
     pass
-
-
-class SendMessageError(Exception):
-    pass

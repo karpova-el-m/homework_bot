@@ -4,10 +4,14 @@ import time
 
 import requests
 from dotenv import load_dotenv
-from telebot import TeleBot, types
+from telebot import TeleBot
 
 from exceptions import (
-    EnvError, HomeworkNameError, HomeworkStatusError, HTTPError, RequestExceptionError, SendMessageError
+    EnvError,
+    HomeworkNameError,
+    HomeworkStatusError,
+    HTTPError,
+    RequestExceptionError
 )
 
 logger = logging.getLogger("homework_logger")
@@ -37,8 +41,8 @@ def check_tokens():
     """Проверяет доступность переменных окружения."""
     env_tokens = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
     if None in env_tokens:
-        logging.critical('Ошибка запуска бота без переменных окружения')
-        raise EnvError
+        logging.critical('Ошибка запуска бота без переменных окружения.')
+        raise EnvError('Ошибка запуска бота без переменных окружения.')
 
 
 def send_message(bot, message):
@@ -54,7 +58,12 @@ def send_message(bot, message):
         )
         logging.debug('Сообщение отправлено')
     except Exception as error:
-        logging.error(f'Ошибка при отправке сообщения: {error}')
+        text = f'Ошибка при отправке сообщения: {error}'
+        logging.error(text)
+        bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=text
+        )
 
 
 def get_api_answer(timestamp):
@@ -68,7 +77,7 @@ def get_api_answer(timestamp):
     except requests.RequestException:
         raise RequestExceptionError
     if response.status_code != 200:
-        raise HTTPError
+        raise HTTPError('API-сервис вернул код, отличный от 200.')
     return response.json()
 
 
@@ -83,9 +92,9 @@ def check_response(response):
         and 'homeworks' in response
         and type(response['homeworks']) is list
     ):
-        raise TypeError
+        raise TypeError('Ответ API не соответствует ожидаемому типу данных.')
     elif len(response['homeworks']) == 0:
-        logging.debug('Список домашних работ за указанный период пуст')
+        logging.debug('Список домашних работ за указанный период пуст.')
 
 
 def parse_status(homework):
@@ -95,11 +104,11 @@ def parse_status(homework):
     домашних работ.
     """
     if 'homework_name' not in homework:
-        raise HomeworkNameError('Домашняя работа не найдена')
+        raise HomeworkNameError('Домашняя работа не найдена.')
     homework_name = homework['homework_name']
     status = homework['status']
     if status not in HOMEWORK_VERDICTS:
-        raise HomeworkStatusError
+        raise HomeworkStatusError('Некорректиный стаус проверки работы.')
     verdict = HOMEWORK_VERDICTS[status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
