@@ -18,6 +18,8 @@ from exceptions import (
 
 load_dotenv()
 
+logger = logging.getLogger("homework_logger")
+
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
@@ -40,7 +42,7 @@ def check_tokens():
                 f'Ошибка запуска бота без переменной окружения {env}.'
             )
     if None in env_tokens:
-        sys.exit()
+        return False
 
 
 def send_message(bot, message):
@@ -54,11 +56,10 @@ def send_message(bot, message):
         logging.debug('Сообщение отправлено.')
     except (apihelper.ApiException, requests.RequestException) as error:
         text = f'Ошибка при отправке сообщения: {error}.'
-        logging.error(text)
         raise MessageSendingError(text)
 
 
-def get_api_answer(timestamp):
+def get_api_answer(timestamp=requests.get(ENDPOINT).headers['date']):
     """Делает запрос к эндпоинту API-сервиса."""
     request_kwargs = {
         'url': ENDPOINT,
@@ -82,6 +83,13 @@ def get_api_answer(timestamp):
 def check_response(response):
     """Проверяет ответ API на соответствие ожидаемому типу данных."""
     logging.debug('Начало проверки ответа от сервера')
+    bot = TeleBot(token=TELEGRAM_TOKEN)
+    try:
+        message = 'Проверяем статус домашней работы'
+        send_message(bot, message)
+    except MessageSendingError as error:
+        message = f'Сбой при отправке сообщения в телеграм: {error}'
+        logging.error(message)
     if not type(response) is dict:
         raise TypeError('Ответ API не соответствует ожидаемому типу данных.')
     elif 'homeworks' not in response:
@@ -92,7 +100,7 @@ def check_response(response):
         )
 
 
-def parse_status(homework):
+def parse_status(homework=None):
     """Получает из информации о конкретной домашней работе статус работы."""
     if homework is None:
         return 'Домашняя работа за указанный период не найдена.'
@@ -110,23 +118,21 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    check_tokens()
+    if check_tokens() is False:
+        sys.exit()
     bot = TeleBot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
     previous_message = ''
     while True:
         try:
-            response = get_api_answer(timestamp)
+            response = get_api_answer()
             check_response(response)
             homeworks = response['homeworks']
-            if len(homeworks) > 0:
+            if homeworks:
                 homework = homeworks[0]
-            else:
-                homework = None
             message = parse_status(homework)
             if message != previous_message:
                 send_message(bot, message)
-            previous_message = message
+                previous_message = message
         except MessageSendingError as error:
             message = f'Сбой при отправке сообщения в телеграм: {error}'
             logging.error(message)
@@ -135,14 +141,12 @@ def main():
             logging.error(message)
             if message != previous_message:
                 send_message(bot, message)
-            previous_message = message
+                previous_message = message
         finally:
-            timestamp = int(time.time())
             time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
-    logger = logging.getLogger("homework_logger")
     logging.basicConfig(
         level=logging.DEBUG,
         filename='homework.log',
