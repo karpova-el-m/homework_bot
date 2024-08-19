@@ -59,7 +59,7 @@ def send_message(bot, message):
         raise MessageSendingError(text)
 
 
-def get_api_answer(timestamp=requests.get(ENDPOINT).headers['date']):
+def get_api_answer(timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
     request_kwargs = {
         'url': ENDPOINT,
@@ -69,6 +69,7 @@ def get_api_answer(timestamp=requests.get(ENDPOINT).headers['date']):
     logging.debug('Отправка запроса к API.')
     try:
         response = requests.get(**request_kwargs)
+        logging.debug(f'time = {timestamp}')
     except requests.ConnectionError as connection_err:
         raise ConnectionError(
             f'Ошибка соединения с сервером {connection_err}: {request_kwargs}.'
@@ -76,6 +77,7 @@ def get_api_answer(timestamp=requests.get(ENDPOINT).headers['date']):
     except requests.RequestException as request_err:
         raise RequestExceptionError(f'{request_err}: {request_kwargs}')
     if response.status_code != 200:
+        logging.debug(timestamp)
         raise UnexpectedStatusError('API-сервис вернул код, отличный от 200.')
     return response.json()
 
@@ -84,6 +86,7 @@ def check_response(response):
     """Проверяет ответ API на соответствие ожидаемому типу данных."""
     logging.debug('Начало проверки ответа от сервера')
     bot = TeleBot(token=TELEGRAM_TOKEN)
+    logging.error(response)
     try:
         message = 'Проверяем статус домашней работы'
         send_message(bot, message)
@@ -100,7 +103,7 @@ def check_response(response):
         )
 
 
-def parse_status(homework=None):
+def parse_status(homework):
     """Получает из информации о конкретной домашней работе статус работы."""
     if homework is None:
         return 'Домашняя работа за указанный период не найдена.'
@@ -121,15 +124,17 @@ def main():
     if check_tokens() is False:
         sys.exit()
     bot = TeleBot(token=TELEGRAM_TOKEN)
+    timestamp = int(time.time())
     previous_message = ''
     while True:
         try:
-            response = get_api_answer()
+            response = get_api_answer(timestamp)
             check_response(response)
             homeworks = response['homeworks']
-            if homeworks:
-                homework = homeworks[0]
-            message = parse_status(homework)
+            if not homeworks:
+                message = parse_status(None)
+            else:
+                message = parse_status(homeworks[0])
             if message != previous_message:
                 send_message(bot, message)
                 previous_message = message
@@ -143,6 +148,7 @@ def main():
                 send_message(bot, message)
                 previous_message = message
         finally:
+            timestamp = response['current_date']
             time.sleep(RETRY_PERIOD)
 
 
