@@ -42,7 +42,7 @@ def check_tokens():
                 f'Ошибка запуска бота без переменной окружения {env}.'
             )
     if None in env_tokens:
-        return False
+        return True
 
 
 def send_message(bot, message):
@@ -69,7 +69,6 @@ def get_api_answer(timestamp):
     logging.debug('Отправка запроса к API.')
     try:
         response = requests.get(**request_kwargs)
-        logging.debug(f'time = {timestamp}')
     except requests.ConnectionError as connection_err:
         raise ConnectionError(
             f'Ошибка соединения с сервером {connection_err}: {request_kwargs}.'
@@ -77,7 +76,6 @@ def get_api_answer(timestamp):
     except requests.RequestException as request_err:
         raise RequestExceptionError(f'{request_err}: {request_kwargs}')
     if response.status_code != 200:
-        logging.debug(timestamp)
         raise UnexpectedStatusError('API-сервис вернул код, отличный от 200.')
     return response.json()
 
@@ -85,19 +83,11 @@ def get_api_answer(timestamp):
 def check_response(response):
     """Проверяет ответ API на соответствие ожидаемому типу данных."""
     logging.debug('Начало проверки ответа от сервера')
-    bot = TeleBot(token=TELEGRAM_TOKEN)
-    logging.error(response)
-    try:
-        message = 'Проверяем статус домашней работы'
-        send_message(bot, message)
-    except MessageSendingError as error:
-        message = f'Сбой при отправке сообщения в телеграм: {error}'
-        logging.error(message)
-    if not type(response) is dict:
+    if not isinstance(response, dict):
         raise TypeError('Ответ API не соответствует ожидаемому типу данных.')
     elif 'homeworks' not in response:
         raise RequestedKeyError('В ответе API отсутствует ожидаемый ключ.')
-    elif not type(response['homeworks']) is list:
+    elif not isinstance(response['homeworks'], list):
         raise TypeError(
             'Данные по ключу не соответствует ожидаемому типу данных.'
         )
@@ -105,8 +95,6 @@ def check_response(response):
 
 def parse_status(homework):
     """Получает из информации о конкретной домашней работе статус работы."""
-    if homework is None:
-        return 'Домашняя работа за указанный период не найдена.'
     if 'homework_name' not in homework:
         raise HomeworkNameError('Домашняя работа не найдена.')
     homework_name = homework['homework_name']
@@ -121,7 +109,7 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    if check_tokens() is False:
+    if check_tokens():
         sys.exit()
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
@@ -131,10 +119,10 @@ def main():
             response = get_api_answer(timestamp)
             check_response(response)
             homeworks = response['homeworks']
-            if not homeworks:
-                message = parse_status(None)
-            else:
+            if homeworks:
                 message = parse_status(homeworks[0])
+            else:
+                message = 'Домашняя работа за указанный период не найдена.'
             if message != previous_message:
                 send_message(bot, message)
                 previous_message = message
@@ -148,7 +136,7 @@ def main():
                 send_message(bot, message)
                 previous_message = message
         finally:
-            timestamp = response['current_date']
+            timestamp = response.get('current_date', int(time.time()))
             time.sleep(RETRY_PERIOD)
 
 
